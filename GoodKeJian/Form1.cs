@@ -11,6 +11,7 @@ using System.Net;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using System.Web;
 using System.Windows.Forms;
 
 namespace GoodKeJian
@@ -20,6 +21,7 @@ namespace GoodKeJian
         SynchronizationContext m_SyncContext = null;
         private readonly object Locker = new object();
         private readonly object Locker2 = new object();
+        Dictionary<string, string> cookie = new Dictionary<string, string>();
         ConfigFile config;
         public Form1()
         {
@@ -47,6 +49,25 @@ namespace GoodKeJian
             webResponse.Close();
             return content;
         }
+
+        public byte[] GZipDecompress(byte[] data)
+        {
+            using (MemoryStream stream = new MemoryStream())
+            {
+                using (GZipStream gZipStream = new GZipStream(new MemoryStream(data), CompressionMode.Decompress))
+                {
+                    byte[] bytes = new byte[40960];
+                    int n;
+                    while ((n = gZipStream.Read(bytes, 0, bytes.Length)) != 0)
+                    {
+                        stream.Write(bytes, 0, n);
+                    }
+                    gZipStream.Close();
+                }
+                return stream.ToArray();
+            }
+        }
+
 
         public string GetHtml(string url)
 
@@ -119,6 +140,48 @@ namespace GoodKeJian
                 //MessageBox.Show(e.Message);
             }
         }
+
+        public void Login()
+        {
+            HttpWebRequest request;
+            HttpWebResponse response;
+            request = WebRequest.Create("https://www.ks5u.com/user/inc/UserLogin_Index.asp") as HttpWebRequest;
+            request.Accept = "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8";
+            request.UserAgent = "Mozilla/5.0 (Windows NT 6.1; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/59.0.3071.115 Safari/537.36";
+            request.KeepAlive = true;
+            //request.Referer = "http://www.jiaokedu.com/kejian/" + softid+".html";
+            request.AllowAutoRedirect = true;
+            request.Headers.Add("Accept-Encoding", "gzip, deflate");
+            request.Headers.Add("Accept-Language", "zh-CN,zh;q=0.8,en-US;q=0.6,en;q=0.4");
+            request.ContentType = "application/x-www-form-urlencoded";
+            request.Method = "POST";
+            string param = string.Format("username=251123458@qq.com&password=123456&c_add=0");
+            byte[] postData = Encoding.UTF8.GetBytes(param);
+            Stream output = request.GetRequestStream();
+            output.Write(postData,0,postData.Length);
+            output.Close();
+            Cookie c = new Cookie("ASPSESSIONIDSGDDRSAQ", "KGFCABOADEMOJBNJKDEKFNDG");
+            c.Domain = "www.ks5u.com";
+            request.CookieContainer = new CookieContainer();
+            request.CookieContainer.Add(c);
+            c = new Cookie("ASPSESSIONIDQGCAQSDR", "OEIGCBOAOLBIDGHGJAAMOBAF");
+            c.Domain = "www.ks5u.com";          
+            request.CookieContainer.Add(c);
+
+            //发送请求并获取相应回应数据
+            response = request.GetResponse() as HttpWebResponse;
+
+            byte[] bytes = new byte[response.ContentLength];
+            response.GetResponseStream().Read(bytes,0,bytes.Length);
+            bytes=GZipDecompress(bytes);
+            string str = Encoding.GetEncoding("GB2312").GetString(bytes);
+            string cook = response.Headers["Set-Cookie"].Split(',').Last().Split(';').First();
+            cookie.Clear();
+            cookie.Add(cook.Split('=').First(),cook.Split('=').Last());
+            response.Close();
+
+        }
+
         public string HttpDownloadFile(string softid,string filename2)
         {
             // 设置参数
@@ -155,24 +218,19 @@ namespace GoodKeJian
                 // Stream output = request.GetRequestStream();
                 // output.Write(postData,0,postData.Length);
                 // output.Close();
-                Cookie c = new Cookie("ASPSESSIONIDQEDARRBT", config.GetConfigValue("ASPSESSIONIDQEDARRBT"));
+                Cookie c = new Cookie("ASPSESSIONIDSGDDRSAQ", "KGFCABOADEMOJBNJKDEKFNDG");
                 c.Domain = "www.ks5u.com";
                 request.CookieContainer = new CookieContainer();
                 request.CookieContainer.Add(c);
-                c = new Cookie("ASPSESSIONIDQEDBQSAR", config.GetConfigValue("ASPSESSIONIDQEDBQSAR"));
+                c = new Cookie("ASPSESSIONIDQGCAQSDR", "OEIGCBOAOLBIDGHGJAAMOBAF");
                 c.Domain = "www.ks5u.com";
                 request.CookieContainer.Add(c);
-                c = new Cookie("ASPSESSIONIDQGBDQTBS", config.GetConfigValue("ASPSESSIONIDQGBDQTBS"));
-                c.Domain = "www.ks5u.com";
-                request.CookieContainer.Add(c);
-
-                c = new Cookie("ASPSESSIONIDSECARQAT", config.GetConfigValue("ASPSESSIONIDSECARQAT"));
-                c.Domain = "www.ks5u.com";
-                request.CookieContainer.Add(c);
-
-                c = new Cookie("ASPSESSIONIDSGBASRAS", config.GetConfigValue("ASPSESSIONIDSGBASRAS"));
-                c.Domain = "www.ks5u.com";
-                request.CookieContainer.Add(c);
+                foreach(string key in cookie.Keys)
+                {
+                    c = new Cookie(key,cookie[key]);
+                    c.Domain = "www.ks5u.com";
+                    request.CookieContainer.Add(c);
+                }
 
                 //发送请求并获取相应回应数据
                 response = request.GetResponse() as HttpWebResponse;
@@ -244,6 +302,9 @@ namespace GoodKeJian
             filepath = label4.Text;
             threadcount = 0;
             System.Net.ServicePointManager.DefaultConnectionLimit = 200;
+
+            Login();
+
             for (int i = 0; i < k; i++)
             {
                 lock (Locker2)
